@@ -1,3 +1,7 @@
+/**
+ * @OnlyCurrentDoc
+ */
+
 // need to add manually trigger for Spreadsheet onEdit event
 function onTriggeredEdit(e) {
   checkForProjectFolder(e);
@@ -42,7 +46,14 @@ function checkForProjectFolder(e) {
 
 function getColIdByName(sheet, name) {
   let data = sheet.getDataRange().getValues();
-  return data[0].indexOf(name);
+  let header = data[0].map((name)=>{
+    return name.trim().toLowerCase();
+  });
+  let index = header.indexOf(name.toLowerCase());
+  if (index == '-1') {
+    console.log(`Error. Unable to find index for ${name}`);
+  }
+  return index;
 }
 
 function isUpdateInColumn(e, column){
