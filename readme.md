@@ -24,6 +24,11 @@ This repo serves as a central place for various Google Apps Script utilities, au
 3. In your [Google Apps Script](https://script.google.com/) editor, paste the code into a new project.
 4. Follow any additional setup instructions provided in the script's README or comments.
 
+## Future Considerations
+
+- Add Clasp to enable local dev / deployment - https://github.com/google/clasp
+- Consider rebasing off of https://github.com/WildH0g/apps-script-engine-template or similar
+
 ## Contributing
 
 Contributions are welcome! Please open an issue or submit a pull request with your script or improvement.
