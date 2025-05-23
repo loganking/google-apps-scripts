@@ -2,7 +2,7 @@
  * @OnlyCurrentDoc
  */
 
-// need to add manually trigger for Spreadsheet onEdit event
+// need to add manual trigger for Spreadsheet onEdit event
 function onTriggeredEdit(e) {
   checkForProjectFolder(e);
 }
@@ -78,9 +78,14 @@ function createProjectFolder(projectInfo) {
 
   console.log('attempting to create folder for', projectInfo);
 
-  // lookup folder template
-  let projectsFolderId = config.get('projectsFolderId');
-  let projectsFolder = DriveApp.getFolderById(projectsFolderId);
+  try {
+    const scriptProperties = PropertiesService.getScriptProperties();
+    let projectsFolderId = scriptProperties.getProperty('projectsFolderId');
+    var projectsFolder = DriveApp.getFolderById(projectsFolderId);
+  } catch (e) {
+    console.log('Error. Unable to find or open projects folder.');
+    throw e;
+  }
 
   let customerFolder = findOrCreateFolder(projectsFolder, projectInfo.customer);
 
@@ -94,8 +99,14 @@ function createProjectFolder(projectInfo) {
 }
 
 function copyTemplateToProjectFolder(projectFolder) {
-  let templateFolderId = config.get('templateFolderId');
-  let templateFolder = DriveApp.getFolderById(templateFolderId);
+  try {
+    const scriptProperties = PropertiesService.getScriptProperties();
+    let templateFolderId = scriptProperties.getProperty('templateFolderId');
+    var templateFolder = DriveApp.getFolderById(templateFolderId);
+  } catch (e) {
+    console.log('Error. Unable to find or open template folder.');
+    throw e;
+  }
   let count = recursivelyCopyFilesAndFolders(templateFolder, projectFolder);
   console.log(`Copied ${count} template files to new job folder.`)
 }
