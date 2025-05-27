@@ -3,11 +3,11 @@
  */
 
 // need to add manual trigger for Spreadsheet onEdit event
-function onTriggeredEdit(e) {
-  checkForProjectFolder(e);
+function onTriggeredEdit(e, config) {
+  checkForProjectFolder(e, config);
 }
 
-function checkForProjectFolder(e) {
+function checkForProjectFolder(e, config) {
   let sheet = e.source.getActiveSheet();
 
   // Ensure we are working on the correct sheet
@@ -29,6 +29,8 @@ function checkForProjectFolder(e) {
   let folder = getValueByColumnName(sheet, editedRow, 'Project Folder (Technician)');
 
   let projectInfo = {
+    'projectsFolderId': config.projectsFolderId,
+    'templateFolderId': config.templateFolderId,
     'projectId': projectId,
     'description': description,
     'customer': customer,
@@ -79,9 +81,7 @@ function createProjectFolder(projectInfo) {
   console.log('attempting to create folder for', projectInfo);
 
   try {
-    const scriptProperties = PropertiesService.getScriptProperties();
-    let projectsFolderId = scriptProperties.getProperty('projectsFolderId');
-    var projectsFolder = DriveApp.getFolderById(projectsFolderId);
+    var projectsFolder = DriveApp.getFolderById(projectInfo.projectsFolderId);
   } catch (e) {
     console.log('Error. Unable to find or open projects folder.');
     throw e;
@@ -92,17 +92,15 @@ function createProjectFolder(projectInfo) {
   let jobFolderName = `${projectInfo.projectId} - ${projectInfo.description}`
   let jobFolder = findOrCreateFolder(customerFolder, jobFolderName);
 
-  copyTemplateToProjectFolder(jobFolder);
+  copyTemplateToProjectFolder(jobFolder, projectInfo);
   updateJobFilesInFolder(jobFolder, projectInfo)
 
   return jobFolder.getUrl();
 }
 
-function copyTemplateToProjectFolder(projectFolder) {
+function copyTemplateToProjectFolder(projectFolder, projectInfo) {
   try {
-    const scriptProperties = PropertiesService.getScriptProperties();
-    let templateFolderId = scriptProperties.getProperty('templateFolderId');
-    var templateFolder = DriveApp.getFolderById(templateFolderId);
+    var templateFolder = DriveApp.getFolderById(projectInfo.templateFolderId);
   } catch (e) {
     console.log('Error. Unable to find or open template folder.');
     throw e;
