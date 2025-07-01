@@ -2,12 +2,20 @@
  * @OnlyCurrentDoc
  */
 
-// need to add manual trigger for Spreadsheet onEdit event
-function onTriggeredEdit(e, config) {
-  checkForProjectFolder(e, config);
+// example trigger function to be used in the source spreadsheet script
+function triggerForProjectFolders(e) {
+  const scriptProperties = PropertiesService.getScriptProperties();
+  let config = {
+    adminFolderId: scriptProperties.getProperty('adminFolderId'),
+    projectsFolderId: scriptProperties.getProperty('projectsFolderId'),
+    templateFolderId: scriptProperties.getProperty('templateFolderId'),
+  }
+
+  ProjectTechFolderAutomation.onTriggeredEdit(e, config);
 }
 
-function checkForProjectFolder(e, config) {
+// need to add manual trigger for Spreadsheet onEdit event
+function onTriggeredEdit(e, config) {
   let sheet = e.source.getActiveSheet();
 
   // Ensure we are working on the correct sheet
@@ -16,34 +24,85 @@ function checkForProjectFolder(e, config) {
     return;
   }
 
-  // Only create project folders when Status is updated to "Not Started Yet"
-  if (!isUpdateInColumn(e, 'Status') || e.range.getValues()[0][0] != 'Not Started Yet') {
-    console.log('Ending. Triggered edit not changing Status to "Not Started Yet"');
+
+  if (isUpdateInColumn(e, 'Status') && e.range.getValues()[0][0] === 'Not Started Yet') {
+    checkForProjectFolders(e, config);
+  }
+  if (isUpdateInColumn(e, 'Status') && e.range.getValues()[0][0] === 'Completed/Invoiced') {
+    archiveProjectFolders(e, config);
+  }
+}
+
+function checkForProjectFolders(e, config) {
+  let projectInfo = setProjectInfo(e, config);
+  let sheet = e.source.getActiveSheet();
+
+  if (projectInfo.projectId == "" || projectInfo.description == "" || projectInfo.customer == "") {
+    console.log("Not creating folders. Context: ", projectInfo);
     return;
   }
 
+  if (projectInfo.projectFolder == "") {
+    let folder = createJobFolder(projectInfo, 'project');
+    updateValueByColumnName(sheet, projectInfo.editedRow, 'Project Folder (Technician)', folder.getUrl());
+    console.log("Created project folder ", folder.getUrl());
+  }
+
+  if (projectInfo.adminFolder == "") {
+    let folder = createJobFolder(projectInfo, 'admin');
+    updateValueByColumnName(sheet, projectInfo.editedRow, 'Administration Project Folder', folder.getUrl());
+    console.log("Created admin folder ", folder.getUrl());
+  }
+}
+
+function archiveProjectFolders(e, config) {
+  const projectInfo = setProjectInfo(e, config);
+
+  if (projectInfo.projectId == "" || projectInfo.customer == "") {
+    return;
+  }
+
+  console.log(`Attempting to archive project folders for`, projectInfo);
+  const customerFolderName = getCustomerFolderName(projectInfo);
+  if (projectInfo.projectFolder != "") {
+    moveToArchiveFolder(projectInfo.projectsFolderId, customerFolderName, projectInfo.projectFolder);
+  }
+  if (projectInfo.adminFolder != "") {
+    moveToArchiveFolder(projectInfo.adminFolderId, customerFolderName, projectInfo.adminFolder);
+  }
+}
+
+function moveToArchiveFolder(rootId, customerFolderName, folderName) {
+  const rootFolder = DriveApp.getFolderById(rootId);
+  const customerFolder = findFolder(rootFolder, customerFolderName);
+  const archiveFolder = findOrCreateFolder(customerFolder, 'Completed');
+  const folder = findFolder(customerFolder, folderName);
+  folder.moveTo(archiveFolder);
+  console.log(`Moved folder ${folderName} to archive.`);
+}
+
+function setProjectInfo(e, config) {
+  let sheet = e.source.getActiveSheet();
   let editedRow = e.range.getRow();
+
   let projectId = getValueByColumnName(sheet, editedRow, 'QB Project');
   let description = getValueByColumnName(sheet, editedRow, 'Description');
   let customer = getValueByColumnName(sheet, editedRow, 'Customer Name');
-  let folder = getValueByColumnName(sheet, editedRow, 'Project Folder (Technician)');
+  let projectFolder = getValueByColumnName(sheet, editedRow, 'Project Folder (Technician)');
+  let adminFolder = getValueByColumnName(sheet, editedRow, 'Administration Project Folder');
 
   let projectInfo = {
+    'editedRow': editedRow,
+    'adminFolderId': config.adminFolderId,
     'projectsFolderId': config.projectsFolderId,
     'templateFolderId': config.templateFolderId,
     'projectId': projectId,
     'description': description,
     'customer': customer,
-    'projectFolder': folder,
+    'projectFolder': projectFolder,
+    'adminFolder': adminFolder,
   }
-
-  if (projectId == "" || description == "" || folder != "") {
-    console.log("Not creating folder with context", projectInfo);
-    return;
-  }
-
-  let folderUrl = createProjectFolder(projectInfo);
-  updateValueByColumnName(sheet, editedRow, 'Project Folder (Technician)', folderUrl);
+  return projectInfo;
 }
 
 function getColIdByName(sheet, name) {
@@ -65,7 +124,11 @@ function isUpdateInColumn(e, column){
 
 function getValueByColumnName(sheet, row, name) {
   let colId = getColIdByName(sheet, name);
-  return sheet.getRange(row, colId + 1).getValues()[0][0];
+  let value = sheet.getRange(row, colId + 1).getValues()[0][0];
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+  return value;
 }
 
 function updateValueByColumnName(sheet, row, name, value) {
@@ -73,40 +136,48 @@ function updateValueByColumnName(sheet, row, name, value) {
   return sheet.getRange(row, colId + 1).setValue(value);
 }
 
-function createProjectFolder(projectInfo) {
-  if (projectInfo.customer.startsWith('Larimer County')) {
-    projectInfo.customer = 'Larimer County';
-  }
+function createJobFolder(projectInfo, type) {
+  console.log(`attempting to create ${type} folder for`, projectInfo);
 
-  console.log('attempting to create folder for', projectInfo);
-
+  let rootFolder;
   try {
-    var projectsFolder = DriveApp.getFolderById(projectInfo.projectsFolderId);
+    let folderId = (type === 'admin') ? projectInfo.adminFolderId : projectInfo.projectsFolderId;
+    rootFolder = DriveApp.getFolderById(folderId);
   } catch (e) {
-    console.log('Error. Unable to find or open projects folder.');
+    console.log(`Error. Unable to find or open ${type} folder.`);
     throw e;
   }
 
-  let customerFolder = findOrCreateFolder(projectsFolder, projectInfo.customer);
+  let customerFolderName = getCustomerFolderName(projectInfo);
+  let customerFolder = findOrCreateFolder(rootFolder, customerFolderName);
 
-  let jobFolderName = `${projectInfo.projectId} - ${projectInfo.description}`
+  let jobFolderName = `${projectInfo.projectId} - ${(type === 'admin')? '(Admin) ': ''}${projectInfo.description}`
   let jobFolder = findOrCreateFolder(customerFolder, jobFolderName);
 
-  copyTemplateToProjectFolder(jobFolder, projectInfo);
-  updateJobFilesInFolder(jobFolder, projectInfo)
+  if (type !== 'admin') {
+    copyTemplateToFolder(projectInfo.templateFolderId, jobFolder);
+    updateJobFilesInFolder(jobFolder, projectInfo)
+  }
 
-  return jobFolder.getUrl();
+  return jobFolder;
 }
 
-function copyTemplateToProjectFolder(projectFolder, projectInfo) {
+function getCustomerFolderName(projectInfo) {
+  if (projectInfo.customer.startsWith('Larimer County')) {
+    return 'Larimer County';
+  }
+  return projectInfo.customer;
+}
+
+function copyTemplateToFolder(templateFolderId, folder) {
   try {
-    var templateFolder = DriveApp.getFolderById(projectInfo.templateFolderId);
+    var templateFolder = DriveApp.getFolderById(templateFolderId);
   } catch (e) {
     console.log('Error. Unable to find or open template folder.');
     throw e;
   }
-  let count = recursivelyCopyFilesAndFolders(templateFolder, projectFolder);
-  console.log(`Copied ${count} template files to new job folder.`)
+  let count = recursivelyCopyFilesAndFolders(templateFolder, folder);
+  console.log(`Copied ${count} template files to folder.`)
 }
 
 function recursivelyCopyFilesAndFolders(orig, dest, count = 0) {
@@ -128,13 +199,39 @@ function recursivelyCopyFilesAndFolders(orig, dest, count = 0) {
   return count;
 }
 
-function findOrCreateFolder(parentFolder, name) {
+function findFolder(parentFolder, name) {
   let childFolders = parentFolder.getFoldersByName(name);
-  while(childFolders.hasNext()) {
+  if (childFolders.hasNext()) {
     return childFolders.next()
   }
+  console.log(`Error. Unable to find folder ${name} in ${parentFolder.getName()}`);
+}
 
+function findOrCreateFolder(parentFolder, name) {
+  let childFolders = parentFolder.getFoldersByName(name);
+  if (childFolders.hasNext()) {
+    return childFolders.next()
+  }
   return parentFolder.createFolder(name);
+}
+
+function findOrCreateFolderPath(root, path) {
+  let parts = path.split('/');
+  if (parts[parts.length - 1].contains('.')) {
+    parts.pop(); // Remove file separator at the end if it exists
+  }
+
+  let currentFolder = root;
+  for (let part of parts) {
+    if (part.trim() === '') continue; // Skip empty parts
+    let childFolders = currentFolder.getFoldersByName(part);
+    if (childFolders.hasNext()) {
+      currentFolder = childFolders.next();
+    } else {
+      currentFolder = currentFolder.createFolder(part);
+    }
+  }
+  return currentFolder;
 }
 
 function updateJobFilesInFolder(jobFolder, projectInfo) {
