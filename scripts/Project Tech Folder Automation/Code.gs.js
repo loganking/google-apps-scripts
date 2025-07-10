@@ -112,7 +112,8 @@ function getColIdByName(sheet, name) {
   });
   let index = header.indexOf(name.toLowerCase());
   if (index == '-1') {
-    console.log(`Error. Unable to find index for ${name}`);
+    console.log(`Headers: `,data[0]);
+    throw new Error(`Unable to find column ${name} in header row.`);
   }
   return index;
 }
@@ -204,7 +205,7 @@ function findFolder(parentFolder, name) {
   if (childFolders.hasNext()) {
     return childFolders.next()
   }
-  console.log(`Error. Unable to find folder ${name} in ${parentFolder.getName()}`);
+  throw new Error(`Error. Unable to find folder ${name} in ${parentFolder.getName()}`);
 }
 
 function findOrCreateFolder(parentFolder, name) {
